@@ -4,7 +4,7 @@ centered, with neighboring country border fragments extending to the edges,
 a water layer (rivers + lakes), and a trail layer (OKT hiking trail from GPX).
 
 Outputs two vendor-ready SVGs into hungarian-blue-trail/output/:
-  - plotter_210x148mm.svg  — 3 AxiDraw-compatible Inkscape layers (strokes only)
+  - plotter_210x148mm.svg  — 4 AxiDraw-compatible Inkscape layers (strokes only)
   - laser_210x148mm.svg    — 2 Inkscape layers: Engrave (black fill) + Cut (red hairline)
 
 Usage:
@@ -15,6 +15,7 @@ import json
 import shutil
 from pathlib import Path
 
+import cairocffi as cairo
 import cairosvg
 import gpxpy
 import requests
@@ -76,6 +77,14 @@ TRAIL_CUT_WIDTH_MM = 1.5
 LASER_HAIRLINE_MM = 0.01  # thin stroke for laser vector cut paths
 LASER_CUT_COLOR = "#FF0000"      # red = vector cut
 LASER_ENGRAVE_COLOR = "#000000"   # black = raster engrave
+
+# Caption text
+CAPTION_TITLE = "ORSZÁGOS KÉKTÚRA"
+CAPTION_SUBTITLE = "1172 km"
+CAPTION_TITLE_SIZE_MM = 5.0
+CAPTION_SUBTITLE_SIZE_MM = 3.5
+CAPTION_TITLE_Y_MM = 139.0
+CAPTION_SUBTITLE_Y_MM = 143.5
 
 # ---------------------------------------------------------------------------
 # Data fetching
@@ -415,6 +424,61 @@ def _build_closed_path_stroke(dwg, coords_mm, stroke_width_mm=WATER_STROKE_MM,
     )
 
 
+def _text_to_svg_path(dwg, text, x_mm, y_mm, font_size_mm,
+                      fill="none", stroke="#000000", stroke_width_mm=0):
+    """Render text to outlined SVG <path> elements using cairocffi.
+
+    The text is right-aligned: x_mm is the right edge, y_mm is the baseline.
+    """
+    CAIRO_FONT_SIZE = 100  # work in large font units, then scale to mm
+
+    surface = cairo.RecordingSurface(cairo.CONTENT_ALPHA, None)
+    ctx = cairo.Context(surface)
+    ctx.select_font_face("Helvetica Neue", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+    ctx.set_font_size(CAIRO_FONT_SIZE)
+
+    # --- Build path & measure total advance ---
+    ctx.move_to(0, 0)
+    ctx.text_path(text)
+    total_advance = ctx.get_scaled_font().text_extents(text)[4]  # x_advance
+
+    # --- Convert Cairo path ops to SVG d string ---
+    scale = font_size_mm / CAIRO_FONT_SIZE
+    # Right-align: offset so that the right edge lands at x_mm
+    ox = x_mm - total_advance * scale
+    oy = y_mm  # baseline
+
+    d_parts = []
+    for op_type, points in ctx.copy_path():
+        if op_type == 0:  # MOVE_TO
+            px = mm_to_px(points[0] * scale + ox)
+            py = mm_to_px(points[1] * scale + oy)
+            d_parts.append(f"M{px},{py}")
+        elif op_type == 1:  # LINE_TO
+            px = mm_to_px(points[0] * scale + ox)
+            py = mm_to_px(points[1] * scale + oy)
+            d_parts.append(f"L{px},{py}")
+        elif op_type == 2:  # CURVE_TO
+            coords = []
+            for i in range(0, 6, 2):
+                coords.append(mm_to_px(points[i] * scale + ox))
+                coords.append(mm_to_px(points[i + 1] * scale + oy))
+            d_parts.append(f"C{coords[0]},{coords[1]} {coords[2]},{coords[3]} {coords[4]},{coords[5]}")
+        elif op_type == 3:  # CLOSE_PATH
+            d_parts.append("Z")
+
+    d = " ".join(d_parts)
+
+    attrs = {"fill": fill}
+    if stroke_width_mm > 0:
+        attrs["stroke"] = stroke
+        attrs["stroke_width"] = mm_to_px(stroke_width_mm)
+    else:
+        attrs["stroke"] = "none"
+
+    return dwg.path(d=d, **attrs)
+
+
 def generate_hatch_lines(polygon_mm, spacing_mm=HATCH_SPACING_MM, angle_deg=HATCH_ANGLE_DEG):
     """Generate parallel hatch lines clipped to a polygon in SVG mm space."""
     centroid = polygon_mm.centroid
@@ -494,8 +558,22 @@ def write_plotter_svg(border_svg_lines, river_lines, lake_polys,
                                             stroke_width_mm=TRAIL_STROKE_MM))
     dwg.add(trail_group)
 
+    # Layer 4: text (0.1mm pen)
+    text_group = dwg.g(id="text")
+    text_group.attribs["inkscape:label"] = "4-text"
+    text_group.attribs["inkscape:groupmode"] = "layer"
+    text_group.add(_text_to_svg_path(
+        dwg, CAPTION_TITLE, DRAW_X_MAX, CAPTION_TITLE_Y_MM,
+        CAPTION_TITLE_SIZE_MM, fill="none", stroke="#000000",
+        stroke_width_mm=TRAIL_STROKE_MM))
+    text_group.add(_text_to_svg_path(
+        dwg, CAPTION_SUBTITLE, DRAW_X_MAX, CAPTION_SUBTITLE_Y_MM,
+        CAPTION_SUBTITLE_SIZE_MM, fill="none", stroke="#000000",
+        stroke_width_mm=TRAIL_STROKE_MM))
+    dwg.add(text_group)
+
     dwg.saveas(str(out_path))
-    print(f"  -> {out_path} (3 layers: borders/{BORDER_STROKE_MM}mm, water/{WATER_STROKE_MM}mm, trail/{TRAIL_STROKE_MM}mm)")
+    print(f"  -> {out_path} (4 layers: borders/{BORDER_STROKE_MM}mm, water/{WATER_STROKE_MM}mm, trail/{TRAIL_STROKE_MM}mm, text/{TRAIL_STROKE_MM}mm)")
 
 
 def write_laser_svg(engrave_polys, cut_polys, out_path):
@@ -511,6 +589,12 @@ def write_laser_svg(engrave_polys, cut_polys, out_path):
         ext = list(poly.exterior.coords)
         holes = [list(ring.coords) for ring in poly.interiors]
         engrave_group.add(_build_filled_polygon_path(dwg, ext, holes, fill=LASER_ENGRAVE_COLOR))
+    engrave_group.add(_text_to_svg_path(
+        dwg, CAPTION_TITLE, DRAW_X_MAX, CAPTION_TITLE_Y_MM,
+        CAPTION_TITLE_SIZE_MM, fill=LASER_ENGRAVE_COLOR))
+    engrave_group.add(_text_to_svg_path(
+        dwg, CAPTION_SUBTITLE, DRAW_X_MAX, CAPTION_SUBTITLE_Y_MM,
+        CAPTION_SUBTITLE_SIZE_MM, fill=LASER_ENGRAVE_COLOR))
     dwg.add(engrave_group)
 
     # Cut layer: red hairline outlines of each polygon
@@ -879,7 +963,7 @@ def main():
     print(f"  Dimensions: {WIDTH_MM}mm x {HEIGHT_MM}mm (A5 landscape)")
     print(f"  Padding: {PADDING_MM}mm")
     print(f"\n  Plotter:")
-    print(f"    {PLOTTER_FILE}  — 3 layers (1-borders/{BORDER_STROKE_MM}mm, 2-water/{WATER_STROKE_MM}mm, 3-trail/{TRAIL_STROKE_MM}mm)")
+    print(f"    {PLOTTER_FILE}  — 4 layers (1-borders/{BORDER_STROKE_MM}mm, 2-water/{WATER_STROKE_MM}mm, 3-trail/{TRAIL_STROKE_MM}mm, 4-text/{TRAIL_STROKE_MM}mm)")
     print(f"\n  Laser:")
     print(f"    {LASER_FILE}  — 2 layers (Engrave=black fill, Cut=red hairline, {TRAIL_CUT_WIDTH_MM}mm slit)")
     print(f"{'='*50}")
