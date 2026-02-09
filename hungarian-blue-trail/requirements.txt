@@ -1,0 +1,6 @@
+gpxpy>=1.6.0
+svgwrite>=1.4.0
+Shapely>=2.0.0
+pyproj>=3.6.0
+requests>=2.31.0
+cairosvg>=2.7.0
