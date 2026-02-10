@@ -3,9 +3,11 @@
 centered, with neighboring country border fragments extending to the edges,
 a water layer (rivers + lakes), and a trail layer (OKT hiking trail from GPX).
 
-Outputs two vendor-ready SVGs into hungarian-blue-trail/output/:
-  - plotter_210x148mm.svg  — 4 AxiDraw-compatible Inkscape layers (strokes only)
-  - laser_210x148mm.svg    — 2 Inkscape layers: Engrave (black fill) + Cut (red hairline)
+Outputs vendor-ready SVGs into hungarian-blue-trail/output/:
+  - plotter_210x148mm.svg        — 4 AxiDraw-compatible Inkscape layers (strokes only)
+  - laser_210x148mm.svg          — 2 Inkscape layers: Engrave (black fill) + Cut (red hairline)
+  - laser_engrave_210x148mm.svg  — engrave layer only (black fill)
+  - laser_cut_210x148mm.svg      — cut layer only (red hairline)
 
 Usage:
     python3 hungarian-blue-trail/generate_cover.py
@@ -60,6 +62,8 @@ OUTPUT_DIR = Path("hungarian-blue-trail/output")
 DIMS = f"{WIDTH_MM}x{HEIGHT_MM}mm"
 PLOTTER_FILE = OUTPUT_DIR / f"plotter_{DIMS}.svg"
 LASER_FILE = OUTPUT_DIR / f"laser_{DIMS}.svg"
+LASER_ENGRAVE_FILE = OUTPUT_DIR / f"laser_engrave_{DIMS}.svg"
+LASER_CUT_FILE = OUTPUT_DIR / f"laser_cut_{DIMS}.svg"
 PREVIEW_FILE = OUTPUT_DIR / "preview.png"
 PREVIEW_DPI = 150
 
@@ -576,6 +580,14 @@ def write_plotter_svg(border_svg_lines, river_lines, lake_polys,
     print(f"  -> {out_path} (4 layers: borders/{BORDER_STROKE_MM}mm, water/{WATER_STROKE_MM}mm, trail/{TRAIL_STROKE_MM}mm, text/{TRAIL_STROKE_MM}mm)")
 
 
+def _add_contour_cut(dwg, group):
+    """Add a 210x148mm contour-cut rectangle to a cut group."""
+    contour = [(0, 0), (WIDTH_MM, 0), (WIDTH_MM, HEIGHT_MM), (0, HEIGHT_MM)]
+    group.add(_build_closed_path_stroke(dwg, contour,
+                                        stroke_width_mm=LASER_HAIRLINE_MM,
+                                        stroke_color=LASER_CUT_COLOR))
+
+
 def write_laser_svg(engrave_polys, cut_polys, out_path):
     """Write a single color-coded laser SVG with two Inkscape-compatible layers:
     'Engrave' (black fills) and 'Cut' (red hairline strokes for vector cutting)."""
@@ -610,10 +622,57 @@ def write_laser_svg(engrave_polys, cut_polys, out_path):
             cut_group.add(_build_closed_path_stroke(dwg, list(ring.coords),
                                                     stroke_width_mm=LASER_HAIRLINE_MM,
                                                     stroke_color=LASER_CUT_COLOR))
+    _add_contour_cut(dwg, cut_group)
     dwg.add(cut_group)
 
     dwg.saveas(str(out_path))
-    print(f"  -> {out_path} ({len(engrave_polys)} engrave + {len(cut_polys)} cut shape(s))")
+    print(f"  -> {out_path} ({len(engrave_polys)} engrave + {len(cut_polys)} cut shape(s) + contour)")
+
+
+def write_laser_engrave_svg(engrave_polys, out_path):
+    """Write a laser SVG containing only the Engrave layer (black fills)."""
+    dwg = _make_svg()
+
+    engrave_group = dwg.g(id="engrave")
+    engrave_group.attribs["inkscape:label"] = "Engrave"
+    engrave_group.attribs["inkscape:groupmode"] = "layer"
+    for poly in engrave_polys:
+        ext = list(poly.exterior.coords)
+        holes = [list(ring.coords) for ring in poly.interiors]
+        engrave_group.add(_build_filled_polygon_path(dwg, ext, holes, fill=LASER_ENGRAVE_COLOR))
+    engrave_group.add(_text_to_svg_path(
+        dwg, CAPTION_TITLE, DRAW_X_MAX, CAPTION_TITLE_Y_MM,
+        CAPTION_TITLE_SIZE_MM, fill=LASER_ENGRAVE_COLOR))
+    engrave_group.add(_text_to_svg_path(
+        dwg, CAPTION_SUBTITLE, DRAW_X_MAX, CAPTION_SUBTITLE_Y_MM,
+        CAPTION_SUBTITLE_SIZE_MM, fill=LASER_ENGRAVE_COLOR))
+    dwg.add(engrave_group)
+
+    dwg.saveas(str(out_path))
+    print(f"  -> {out_path} (engrave only, {len(engrave_polys)} shape(s))")
+
+
+def write_laser_cut_svg(cut_polys, out_path):
+    """Write a laser SVG containing only the Cut layer (red hairline strokes)."""
+    dwg = _make_svg()
+
+    cut_group = dwg.g(id="cut")
+    cut_group.attribs["inkscape:label"] = "Cut"
+    cut_group.attribs["inkscape:groupmode"] = "layer"
+    for poly in cut_polys:
+        ext = list(poly.exterior.coords)
+        cut_group.add(_build_closed_path_stroke(dwg, ext,
+                                                stroke_width_mm=LASER_HAIRLINE_MM,
+                                                stroke_color=LASER_CUT_COLOR))
+        for ring in poly.interiors:
+            cut_group.add(_build_closed_path_stroke(dwg, list(ring.coords),
+                                                    stroke_width_mm=LASER_HAIRLINE_MM,
+                                                    stroke_color=LASER_CUT_COLOR))
+    _add_contour_cut(dwg, cut_group)
+    dwg.add(cut_group)
+
+    dwg.saveas(str(out_path))
+    print(f"  -> {out_path} (cut only, {len(cut_polys)} shape(s) + contour)")
 
 
 # ---------------------------------------------------------------------------
@@ -951,6 +1010,8 @@ def main():
     write_plotter_svg(border_svg_lines, river_lines, lake_polys,
                       trail_laser_polys, transformer, PLOTTER_FILE)
     write_laser_svg(engrave_polys, trail_laser_polys, LASER_FILE)
+    write_laser_engrave_svg(engrave_polys, LASER_ENGRAVE_FILE)
+    write_laser_cut_svg(trail_laser_polys, LASER_CUT_FILE)
 
     # Preview PNG (render plotter SVG at screen resolution)
     png_w = round(WIDTH_MM / 25.4 * PREVIEW_DPI)
@@ -965,7 +1026,9 @@ def main():
     print(f"\n  Plotter:")
     print(f"    {PLOTTER_FILE}  — 4 layers (1-borders/{BORDER_STROKE_MM}mm, 2-water/{WATER_STROKE_MM}mm, 3-trail/{TRAIL_STROKE_MM}mm, 4-text/{TRAIL_STROKE_MM}mm)")
     print(f"\n  Laser:")
-    print(f"    {LASER_FILE}  — 2 layers (Engrave=black fill, Cut=red hairline, {TRAIL_CUT_WIDTH_MM}mm slit)")
+    print(f"    {LASER_FILE}          — 2 layers (Engrave=black fill, Cut=red hairline, {TRAIL_CUT_WIDTH_MM}mm slit)")
+    print(f"    {LASER_ENGRAVE_FILE}  — engrave only (black fill)")
+    print(f"    {LASER_CUT_FILE}      — cut only (red hairline, {TRAIL_CUT_WIDTH_MM}mm slit)")
     print(f"{'='*50}")
     print("\nDone!")
 
