@@ -1,37 +1,17 @@
 # GPX Tracks to Physical Medium
 
-Generate fabrication-ready SVGs from GPX tracks and openly available map data for pen plotters and laser cutters.
+Tools for turning GPS tracks and open map data into fabrication-ready SVG files for pen plotters and laser cutters.
 
-## Hungarian Blue Trail
+The idea: take a GPX file, pull in surrounding geography from openly available datasets, and produce layered SVGs that go straight to a plotter or a laser cutter with no manual post-processing. Each project lives in its own subdirectory with its own inputs, generation script, and output files.
 
-A5 landscape (210x148mm) notebook cover featuring Hungary's border, water features, and the OKT ([Országos Kéktúra](https://en.wikipedia.org/wiki/National_Blue_Trail)) hiking trail.
+This is still a single-purpose repo -- right now it does one thing well. Over time it may grow into a collection of map-to-fabrication recipes, and eventually into reusable tooling that lets others generate their own versions from a GPX file and a few parameters.
+
+## Projects
+
+### [Hungarian Blue Trail](hungarian-blue-trail/)
+
+A5 landscape notebook cover featuring Hungary's border, water features, and the 1172 km OKT ([Orszagos Kektura](https://en.wikipedia.org/wiki/National_Blue_Trail)) hiking trail.
 
 ![Preview](hungarian-blue-trail/output/preview.png)
 
-### Setup
-
-```bash
-pip install -r hungarian-blue-trail/requirements.txt
-```
-
-### Generate
-
-```bash
-python3 hungarian-blue-trail/generate_cover.py
-```
-
-### Output
-
-Two vendor-ready SVGs are written to `hungarian-blue-trail/output/`:
-
-| File | Purpose | Layers |
-|------|---------|--------|
-| `plotter_210x148mm.svg` | Pen plotter (AxiDraw) | `1-borders` (1.0mm), `2-water` (0.1mm), `3-trail` (0.1mm) |
-| `laser_210x148mm.svg` | Laser cutter | `Engrave` (black fill), `Cut` (red hairline, 1.5mm slit) |
-
-Both files use Inkscape-compatible SVG layers (`inkscape:groupmode="layer"`).
-
-### Data Sources
-
-- Country borders and water features: [Natural Earth](https://www.naturalearthdata.com/) 10m vectors (auto-downloaded and cached)
-- Trail: GPX track in `hungarian-blue-trail/input/`
+Outputs a pen-plotter SVG (4 AxiDraw layers) and a laser SVG (cut + engrave layers). See the [project README](hungarian-blue-trail/README.md) for details.
