@@ -18,8 +18,11 @@ from .geometry import (
 )
 
 
-def parse_gpx(source: bytes | Path) -> list[tuple[float, float]]:
-    """Parse a GPX file and return a list of (lon, lat) tuples.
+def parse_gpx(source: bytes | Path) -> list[list[tuple[float, float]]]:
+    """Parse a GPX file and return a list of segments, each a list of (lon, lat) tuples.
+
+    Each GPX track segment and each route becomes its own segment, preserving
+    discontinuities between separate sub-trails.
 
     Accepts raw bytes or a file Path.
     """
@@ -28,27 +31,32 @@ def parse_gpx(source: bytes | Path) -> list[tuple[float, float]]:
     else:
         with open(source, "r") as f:
             gpx = gpxpy.parse(f)
-    points = []
+    segments = []
     for track in gpx.tracks:
         for segment in track.segments:
-            for pt in segment.points:
-                points.append((pt.longitude, pt.latitude))
+            pts = [(pt.longitude, pt.latitude) for pt in segment.points]
+            if pts:
+                segments.append(pts)
     for route in gpx.routes:
-        for pt in route.points:
-            points.append((pt.longitude, pt.latitude))
-    return points
+        pts = [(pt.longitude, pt.latitude) for pt in route.points]
+        if pts:
+            segments.append(pts)
+    return segments
 
 
 def extract_trail(gpx_data: bytes | Path, clip_box_projected,
                   transformer: CoordTransformer) -> list[LineString]:
     """Parse GPX, project to Mercator, clip, return list of LineStrings."""
-    points = parse_gpx(gpx_data)
-    if len(points) < 2:
-        return []
-    projected = [transformer.proj.transform(lon, lat) for lon, lat in points]
-    line = LineString(projected)
-    clipped = line.intersection(clip_box_projected)
-    return collect_linestrings(clipped)
+    segments = parse_gpx(gpx_data)
+    result = []
+    for points in segments:
+        if len(points) < 2:
+            continue
+        projected = [transformer.proj.transform(lon, lat) for lon, lat in points]
+        line = LineString(projected)
+        clipped = line.intersection(clip_box_projected)
+        result.extend(collect_linestrings(clipped))
+    return result
 
 
 def build_trail_laser_polys(trail_lines, transformer: CoordTransformer,

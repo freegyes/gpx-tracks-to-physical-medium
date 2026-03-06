@@ -24,10 +24,11 @@ class TestParseGpx:
                 <trkpt lat="47.7" lon="19.2"/>
             </trkseg></trk>
         """)
-        points = parse_gpx(gpx)
-        assert len(points) == 3
-        assert points[0] == (19.0, 47.5)  # (lon, lat)
-        assert points[2] == (19.2, 47.7)
+        segments = parse_gpx(gpx)
+        assert len(segments) == 1
+        assert len(segments[0]) == 3
+        assert segments[0][0] == (19.0, 47.5)  # (lon, lat)
+        assert segments[0][2] == (19.2, 47.7)
 
     def test_route_points(self):
         gpx = _gpx_bytes("""
@@ -36,9 +37,10 @@ class TestParseGpx:
                 <rtept lat="48.5" lon="18.0"/>
             </rte>
         """)
-        points = parse_gpx(gpx)
-        assert len(points) == 2
-        assert points[0] == (17.0, 48.0)
+        segments = parse_gpx(gpx)
+        assert len(segments) == 1
+        assert len(segments[0]) == 2
+        assert segments[0][0] == (17.0, 48.0)
 
     def test_mixed_tracks_and_routes(self):
         gpx = _gpx_bytes("""
@@ -50,8 +52,10 @@ class TestParseGpx:
                 <rtept lat="48.0" lon="20.0"/>
             </rte>
         """)
-        points = parse_gpx(gpx)
-        assert len(points) == 3
+        segments = parse_gpx(gpx)
+        assert len(segments) == 2
+        assert len(segments[0]) == 2
+        assert len(segments[1]) == 1
 
     def test_empty_gpx(self):
         gpx = _gpx_bytes("")
@@ -70,5 +74,7 @@ class TestParseGpx:
                 </trkseg>
             </trk>
         """)
-        points = parse_gpx(gpx)
-        assert len(points) == 4
+        segments = parse_gpx(gpx)
+        assert len(segments) == 2
+        assert len(segments[0]) == 2
+        assert len(segments[1]) == 2
